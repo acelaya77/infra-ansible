@@ -1,0 +1,35 @@
+---
+- name: Initialize Docker Swarm Cluster
+  hosts: swarm_manager
+  become: true
+  tasks:
+    - name: Ensure Docker Python SDK is installed
+      apt:
+        name: python3-docker
+        state: present
+
+    - name: Initialize Swarm on Manager
+      docker_swarm:
+        state: present
+        advertise_addr: "{{ ansible_host }}"
+      register: swarm_info
+
+    - name: Capture Worker Join Token
+      set_fact:
+        worker_token: "{{ swarm_info.swarm_facts.JoinTokens.Worker }}"
+
+- name: Join Workers to the Swarm
+  hosts: swarm_workers
+  become: true
+  tasks:
+    - name: Ensure Docker Python SDK is installed
+      apt:
+        name: python3-docker
+        state: present
+
+    - name: Join Swarm as Worker
+      docker_swarm:
+        state: join
+        advertise_addr: "{{ ansible_host }}"
+        join_token: "{{ hostvars['swarm-01']['worker_token'] }}"
+        remote_addrs: ["{{ hostvars['swarm-01']['ansible_host'] }}:2377"]

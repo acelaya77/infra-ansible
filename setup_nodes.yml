@@ -1,0 +1,62 @@
+---
+- name: Provision and Harden Ubuntu 24.04 Docker Nodes
+  hosts: docker_nodes
+  become: true
+  vars:
+    # Docker Daemon Optimization settings
+    docker_daemon_config:
+      log-driver: "json-file"
+      log-opts:
+        max-size: "10m"
+        max-file: "3"
+      live-restore: false
+
+  tasks:
+    - name: 1. Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: 2. Install security essentials (Fail2Ban & UFW)
+      apt:
+        name: [fail2ban, ufw, curl, ca-certificates, gnupg]
+        state: present
+
+    - name: 3. Configure UFW (Firewall)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22" # SSH
+        - "2377" # Swarm (optional/just in case)
+        - "80" # HTTP
+        - "443" # HTTPS
+
+    - name: 4. Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    - name: 5. Install Docker using official script
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: 6. Ensure anthony is in the docker group
+      user:
+        name: anthony
+        groups: docker
+        append: yes
+
+    - name: 7. Apply Optimized Docker Daemon Configuration
+      copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ docker_daemon_config | to_nice_json }}"
+      notify: restart docker
+
+  handlers:
+    - name: restart docker
+      service:
+        name: docker
+        state: restarted
